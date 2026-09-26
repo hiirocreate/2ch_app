@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#16181d">
+<title>スレまとめビューア</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>スレまとめ</h1>
+  <nav id="tabs">
+    <button data-mode="live" class="on">リアルタイム</button>
+    <button data-mode="history">過去の人気</button>
+    <button data-mode="kami">神スレ動画</button>
+  </nav>
+  <div id="filters">
+    <div id="boards"></div>
+    <input id="q" type="search" placeholder="スレタイ検索">
+  </div>
+</header>
+<main id="list"></main>
+<form id="import">
+  <input name="url" type="url" placeholder="スレURLを追加 (https://…/test/read.cgi/…)">
+  <button>追加</button>
+</form>
+
+<section id="thread" hidden>
+  <div class="bar"><button id="back">←</button><span id="ttitle"></span><button id="mkvideo">🎬 動画化</button></div>
+  <div id="posts"></div>
+</section>
+
+<section id="player" hidden>
+  <div class="bar"><button id="pclose">×</button><span id="ptitle"></span></div>
+  <div class="stage"><canvas id="cv" width="1280" height="720"></canvas><div id="ploading">台本を生成中…</div></div>
+  <div class="ctrl">
+    <button id="pprev">⏮</button><button id="pplay">▶</button><button id="pnext">⏭</button>
+    <input id="pseek" type="range" min="0" value="0">
+    <label><input id="pbgm" type="checkbox" checked>BGM</label>
+    <label><input id="ptts" type="checkbox" checked>音声</label>
+    <button id="pregen" title="台本を再生成">↻</button>
+  </div>
+  <p id="psummary"></p>
+</section>
+<script type="module" src="/app.js"></script>
+</body>
+</html>

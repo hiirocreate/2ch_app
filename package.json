@@ -1,0 +1,16 @@
+{
+  "name": "2ch-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "5ch・おーぷん2ch(なんJ/おんJ等)の人気スレまとめ閲覧 + 神スレAI動画化アプリ",
+  "scripts": {
+    "start": "node server/index.js",
+    "demo": "DEMO=1 node server/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0"
+  }
+}
