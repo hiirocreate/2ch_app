@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSubject, parseDat, parseReadCgi, extractAnchors } from '../server/parse.js';
-import { momentum, kamiScore, pickHighlights } from '../server/score.js';
+import { parseSubject, parseDat, parseReadCgi, extractAnchors } from '../public/lib/parse.js';
+import { momentum, kamiScore, pickHighlights } from '../public/lib/score.js';
 import { resolveThreadUrl } from '../server/sources.js';
-import { ruleBasedScript } from '../server/video.js';
-import { demoFetcher } from '../server/demo.js';
+import { ruleBasedScript } from '../public/lib/script.js';
+import { demoFetcher } from '../public/lib/demo.js';
 
 test('parseSubject', () => {
   const s = parseSubject('1727312345.dat<>【悲報】ワイ &amp; 猫 (123)\n1727312000.cgi,おんJテスト(45)\nbroken');

@@ -39,3 +39,16 @@ npm test
 ## 注意
 - 巡回は低頻度・少数件に抑えている。各掲示板の利用規約（転載・機械取得の可否）を確認のうえ、個人利用の範囲で使うこと。公開配信する場合は転載許可のある板か、専用API契約が必要。
 - 5ch は dat 直接取得が制限されているため read.cgi の HTML 解析にフォールバックする（レイアウト変更で要修正の可能性あり）。
+
+## Android アプリ (APK)
+`dist/2ch-matome.apk` をスマホにコピーしてインストール（「提供元不明のアプリ」を許可）。
+- サーバー不要。巡回・神スレ判定・台本生成は端末内で実行（アプリを開いている間のみ巡回）。
+- ⚙ から Claude APIキー設定（未設定ならルールベース台本）とデモデータ切替。
+- 読み上げは端末の TTS（日本語音声が必要）。
+
+ビルド（Gradle 不要）:
+```bash
+sudo apt install android-sdk-platform-23 android-sdk-build-tools dalvik-exchange apksigner zipalign
+./android/build-apk.sh   # → dist/2ch-matome.apk
+```
+署名鍵 `android/release.keystore` は初回に自動生成。上書き更新には同じ鍵が必要なので保管すること。

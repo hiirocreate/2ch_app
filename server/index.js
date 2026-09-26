@@ -4,10 +4,11 @@ import path from 'node:path';
 import { BOARDS, getBoard, setFetcher, resolveThreadUrl, threadUrl } from './sources.js';
 import { db, save, flush, tid, upsertThread } from './store.js';
 import { startCollector, getThread, judgeKami, KAMI_THRESHOLD } from './collector.js';
-import { momentum } from './score.js';
+import { momentum } from '../public/lib/score.js';
+import { listThreads } from '../public/lib/db.js';
 import { generateScript } from './video.js';
 
-if (process.env.DEMO) setFetcher((await import('./demo.js')).demoFetcher);
+if (process.env.DEMO) setFetcher((await import('../public/lib/demo.js')).demoFetcher);
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC = path.resolve('public');
@@ -30,21 +31,6 @@ async function readJson(req) {
   return s ? JSON.parse(s) : {};
 }
 
-function listThreads({ board, mode = 'live', q = '', limit = 100 }) {
-  const now = Date.now();
-  let list = Object.values(db.threads);
-  if (board) list = list.filter((t) => t.board === board);
-  if (q) list = list.filter((t) => t.title.includes(q));
-  if (mode === 'live') {
-    list = list.filter((t) => now - t.lastSeen < 30 * 60_000).sort((a, b) => b.momentum - a.momentum);
-  } else if (mode === 'history') {
-    list = list.sort((a, b) => b.maxMomentum - a.maxMomentum);
-  } else if (mode === 'kami') {
-    list = list.filter((t) => (t.kami?.score || 0) >= KAMI_THRESHOLD || db.videos[t.id]).sort((a, b) => (b.kami?.score || 0) - (a.kami?.score || 0));
-  }
-  return list.slice(0, Number(limit)).map((t) => ({ ...t, boardName: boardById(t.board)?.name || t.board, hasVideo: !!db.videos[t.id] }));
-}
-
 const generating = new Map();
 
 async function api(req, res, url) {
@@ -52,7 +38,7 @@ async function api(req, res, url) {
   if (req.method === 'GET' && p[1] === 'boards') return send(res, 200, BOARDS.map(boardInfo));
 
   if (req.method === 'GET' && p[1] === 'threads') {
-    return send(res, 200, listThreads(Object.fromEntries(url.searchParams)));
+    return send(res, 200, listThreads(db, Object.fromEntries(url.searchParams), { threshold: KAMI_THRESHOLD, boardName: (id) => boardById(id)?.name || id }));
   }
 
   if (req.method === 'POST' && p[1] === 'import') {

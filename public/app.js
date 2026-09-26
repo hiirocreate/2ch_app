@@ -9,11 +9,28 @@ const api = async (url, opt) => {
   return j;
 };
 
+const json = (body) => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const httpApi = {
+  boards: () => api('/api/boards'),
+  threads: (params) => api(`/api/threads?${new URLSearchParams(params)}`),
+  thread: (board, key) => api(`/api/thread/${board}/${key}`),
+  importUrl: (url) => api('/api/import', json({ url })),
+  video: (board, key, regenerate) => api(`/api/video/${board}/${key}`, json({ regenerate })),
+};
+const native = !!window.AndroidBridge; // Android アプリ内では端末内で巡回・生成する
+let backend = httpApi;
+
 const state = { mode: 'live', board: '', q: '', current: null };
 const player = new Player($('#cv'));
 
 async function init() {
-  const boards = await api('/api/boards');
+  if (native) {
+    const m = await import('./local-api.js');
+    backend = m.localApi;
+    m.startCrawl(() => loadList());
+    setupSettings();
+  }
+  const boards = await backend.boards();
   $('#boards').innerHTML = [{ id: '', name: 'すべて' }, ...boards].map((b) => `<button data-b="${b.id}" class="${b.id === '' ? 'on' : ''}">${esc(b.name)}</button>`).join('');
   $('#boards').onclick = (e) => {
     const b = e.target.closest('button');
@@ -39,7 +56,7 @@ async function init() {
     const url = e.target.url.value.trim();
     if (!url) return;
     try {
-      const t = await api('/api/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+      const t = await backend.importUrl(url);
       e.target.reset();
       openThread(t.board, t.key);
     } catch (err) {
@@ -53,12 +70,11 @@ async function init() {
   loadList();
   setInterval(() => state.mode === 'live' && !document.hidden && loadList(), 60_000);
   route();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  if (!native && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
 async function loadList() {
-  const qs = new URLSearchParams({ mode: state.mode, board: state.board, q: state.q });
-  const list = await api(`/api/threads?${qs}`).catch(() => []);
+  const list = await backend.threads({ mode: state.mode, board: state.board, q: state.q }).catch(() => []);
   const fmt = (n) => (n >= 10000 ? `${(n / 10000).toFixed(1)}万` : n);
   $('#list').innerHTML = list.length
     ? list
@@ -102,7 +118,7 @@ async function showThread(board, key) {
   $('#ttitle').textContent = '読み込み中…';
   $('#posts').innerHTML = '';
   try {
-    const t = await api(`/api/thread/${board}/${key}`);
+    const t = await backend.thread(board, key);
     state.current = { ...t, key };
     $('#ttitle').textContent = t.meta?.title || t.title;
     const op = t.posts[0]?.id;
@@ -137,7 +153,7 @@ async function showPlayer(board, key, regenerate = false) {
   $('#ploading').textContent = '台本を生成中…（AI生成は数十秒かかることがあります）';
   $('#psummary').textContent = '';
   try {
-    const v = await api(`/api/video/${board}/${key}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ regenerate }) });
+    const v = await backend.video(board, key, regenerate);
     $('#ptitle').textContent = v.title;
     $('#psummary').textContent = `${v.summary}（台本: ${v.generator}）`;
     $('#ploading').hidden = true;
@@ -159,5 +175,23 @@ player.onchange = (i, n, playing) => {
   $('#pseek').value = i;
   $('#pplay').textContent = playing ? '⏸' : '▶';
 };
+
+function setupSettings() {
+  const btn = document.createElement('button');
+  btn.textContent = '⚙';
+  btn.id = 'settings';
+  btn.onclick = () => {
+    const key = prompt('Claude APIキー（動画台本のAI生成用。空欄ならルールベース台本）', localStorage.getItem('apiKey') || '');
+    if (key === null) return;
+    key.trim() ? localStorage.setItem('apiKey', key.trim()) : localStorage.removeItem('apiKey');
+    const demo = confirm('デモデータで表示しますか？（OK=デモ / キャンセル=実際の掲示板）');
+    if ((localStorage.getItem('demo') === '1') !== demo) {
+      demo ? localStorage.setItem('demo', '1') : localStorage.removeItem('demo');
+      localStorage.removeItem('db');
+      location.reload();
+    }
+  };
+  $('h1').append(btn);
+}
 
 init();

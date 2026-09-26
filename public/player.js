@@ -15,7 +15,7 @@ export class Player {
     this.ctx = canvas.getContext('2d');
     this.index = 0;
     this.playing = false;
-    this.tts = 'speechSynthesis' in window;
+    this.tts = !!window.AndroidBridge || 'speechSynthesis' in window;
     this.bgmOn = true;
     this.images = new Map();
     this.bgm = new Bgm();
@@ -57,7 +57,7 @@ export class Player {
   }
   pause() {
     this.playing = false;
-    window.speechSynthesis?.cancel();
+    stopSpeech();
     clearTimeout(this.timer);
     this.bgm.stop();
     this.onchange(this.index, this.script?.scenes.length || 0, false);
@@ -84,7 +84,7 @@ export class Player {
     this.preload(this.index);
     this.onchange(this.index, this.script.scenes.length, true);
     clearTimeout(this.timer);
-    window.speechSynthesis?.cancel();
+    stopSpeech();
     const next = () => {
       if (!this.playing) return;
       if (this.index < this.script.scenes.length - 1) {
@@ -97,18 +97,9 @@ export class Player {
     };
     const minMs = Math.max(2500, s.text.length * 110);
     if (this.tts) {
-      const u = new SpeechSynthesisUtterance(s.text.replace(/[wｗ]{2,}/g, 'わら').replace(/草/g, 'くさ'));
-      const sp = SPEAKERS[s.speaker] || SPEAKERS.anon;
-      u.lang = 'ja-JP';
-      u.pitch = sp.pitch;
-      u.rate = sp.rate;
-      const voice = speechSynthesis.getVoices().find((v) => v.lang.startsWith('ja'));
-      if (voice) u.voice = voice;
       let done = false;
       const fin = () => !done && ((done = true), (this.timer = setTimeout(next, 500)));
-      u.onend = fin;
-      u.onerror = fin;
-      speechSynthesis.speak(u);
+      if (!speak(s, fin)) return (this.timer = setTimeout(next, minMs));
       this.timer = setTimeout(fin, minMs * 3); // 読み上げが止まった時の保険
     } else {
       this.timer = setTimeout(next, minMs);
@@ -166,6 +157,39 @@ export class Player {
     ctx.fillStyle = '#e8543c';
     ctx.fillRect(0, H - 6, (W * (this.index + 1)) / this.script.scenes.length, 6);
   }
+}
+
+// 読み上げ: Android アプリではネイティブ TTS、ブラウザでは Web Speech API
+let ttsSeq = 0;
+const ttsWaiters = new Map();
+window.__ttsDone = (id) => {
+  ttsWaiters.get(id)?.();
+  ttsWaiters.delete(id);
+};
+function speak(scene, onEnd) {
+  const text = scene.text.replace(/[wｗ]{2,}/g, 'わら').replace(/草/g, 'くさ');
+  const sp = SPEAKERS[scene.speaker] || SPEAKERS.anon;
+  if (window.AndroidBridge) {
+    const id = `u${++ttsSeq}`;
+    ttsWaiters.set(id, onEnd);
+    return window.AndroidBridge.speak(id, text, sp.pitch, sp.rate);
+  }
+  if (!('speechSynthesis' in window)) return false;
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ja-JP';
+  u.pitch = sp.pitch;
+  u.rate = sp.rate;
+  const voice = speechSynthesis.getVoices().find((v) => v.lang.startsWith('ja'));
+  if (voice) u.voice = voice;
+  u.onend = onEnd;
+  u.onerror = onEnd;
+  speechSynthesis.speak(u);
+  return true;
+}
+function stopSpeech() {
+  ttsWaiters.clear();
+  if (window.AndroidBridge) window.AndroidBridge.stopSpeak();
+  else window.speechSynthesis?.cancel();
 }
 
 function wrap(ctx, text, maxW, font) {

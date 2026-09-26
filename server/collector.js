@@ -1,7 +1,7 @@
 // 定期巡回: 各板の subject.txt から勢いを記録し、伸びたスレは本文を取得して神スレ度を判定
 import { BOARDS, fetchSubject, fetchThread } from './sources.js';
 import { db, save, upsertThread, prune, tid } from './store.js';
-import { momentum, kamiScore } from './score.js';
+import { momentum, kamiScore } from '../public/lib/score.js';
 
 export const KAMI_THRESHOLD = Number(process.env.KAMI_THRESHOLD || 55);
 const cache = new Map(); // 閲覧用の短期キャッシュ id -> {at, data}
