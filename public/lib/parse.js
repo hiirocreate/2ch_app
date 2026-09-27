@@ -30,6 +30,7 @@ export function parseSubject(text) {
   for (const line of text.split('\n')) {
     const m = line.match(/^(\d{9,11})\.(?:dat<>|cgi,)(.*?)\s*\((\d+)\)\s*$/);
     if (!m) continue;
+    if (Number(m[1]) > Date.now() / 1000 + 86400 * 30) continue; // 運営のお知らせ等 (未来キー)
     out.push({ key: m[1], title: decodeEntities(m[2]).trim(), resCount: Number(m[3]) });
   }
   return out;
@@ -50,7 +51,7 @@ export function parseDat(text) {
       mail: decodeEntities(mail),
       date: htmlToText(dateId.replace(/\s*ID:[^\s<]+/, '')),
       id: idm ? idm[1] : '',
-      body: htmlToText(body),
+      body: cleanBody(htmlToText(body)),
     });
   });
   return { title, posts };
@@ -72,14 +73,23 @@ export function parseReadCgi(html) {
     const uid = block.match(/ID:([^\s<"]+)/) || m[0].match(/data-userid="ID:([^"]+)"/);
     posts.push({
       no: Number(m[1]),
-      name: htmlToText(pick('name')),
+      name: htmlToText((block.match(/class="postusername"[^>]*>\s*<b>([\s\S]*?)<\/b>/i) || [])[1] ?? pick('name')),
       mail: '',
       date: htmlToText(pick('date')),
       id: uid ? uid[1] : '',
-      body: htmlToText(pick('(?:post-content|message|escaped)')),
+      body: cleanBody(htmlToText(pick('(?:post-content|message|escaped)'))),
     });
   }
   return { title, posts };
+}
+
+// スレ立て時のシステム行 (!extend / VIPQ2_EXTDAT) を除去
+function cleanBody(body) {
+  return body
+    .replace(/^!extend:.*$/gm, '')
+    .replace(/\s*VIPQ2_EXTDAT:[\s\S]*?EXT was configured/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 // 本文中のアンカー(>>12, >>3-5)を抽出

@@ -141,7 +141,7 @@ public class MainActivity extends Activity {
                     if (in != null) {
                         byte[] buf = new byte[16384];
                         int n;
-                        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                        while ((n = in.read(buf)) > 0 && out.size() < 8 * 1024 * 1024) out.write(buf, 0, n); // 巨大ページ対策
                         in.close();
                     }
                     data = out.toByteArray();

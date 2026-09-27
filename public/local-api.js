@@ -1,9 +1,10 @@
 // Android アプリ用の端末内バックエンド。サーバー(server/)と同じ処理を WebView 内で行う。
 // 通信は Java 側の AndroidBridge 経由 (CORS 回避・Shift_JIS 変換)、保存は localStorage。
 import { decodeBytes, base64ToBytes } from './lib/encoding.js';
-import { DEFAULT_BOARDS, threadUrl, resolveThreadUrl } from './lib/boards.js';
+import { DEFAULT_BOARDS, threadUrl, resolveThreadUrl, fetchSubjectList } from './lib/boards.js';
 import { parseSubject, parseDat, parseReadCgi } from './lib/parse.js';
 import { momentum, kamiScore } from './lib/score.js';
+import { parseOgp } from './lib/links.js';
 import { emptyDb, tid, upsertThread, prune, listThreads } from './lib/db.js';
 import { buildClaudeRequest, parseClaudeResponse, ruleBasedFromPosts, FALLBACK_BETA } from './lib/script.js';
 
@@ -106,6 +107,19 @@ async function judgeKami(board, t) {
   save();
 }
 
+// 板ホストの移転に追従 (前回解決したホストを保存)
+const hosts = JSON.parse(localStorage.getItem('hosts') || '{}');
+for (const b of DEFAULT_BOARDS) if (hosts[b.id]) b.base = hosts[b.id];
+async function fetchSubject(board) {
+  const before = board.base;
+  const list = await fetchSubjectList(board, fetchText);
+  if (board.base !== before) {
+    hosts[board.id] = board.base;
+    localStorage.setItem('hosts', JSON.stringify(hosts));
+  }
+  return list;
+}
+
 let crawling = null;
 // 全板の subject.txt を並列取得し、板ごとに即座に一覧へ反映。神スレ判定(本文取得)は後回しでバックグラウンド実行。
 async function crawl(onUpdate) {
@@ -113,7 +127,7 @@ async function crawl(onUpdate) {
   await Promise.all(
     DEFAULT_BOARDS.map(async (board) => {
       try {
-        const list = parseSubject(await fetchText(new URL('subject.txt', board.base).href));
+        const list = await fetchSubject(board);
         list.forEach((t) => upsertThread(db, board, t, momentum(t.key, t.resCount, now / 1000), now));
         onUpdate?.();
       } catch (e) {
@@ -173,15 +187,27 @@ async function generateScript(title, posts) {
   return ruleBasedFromPosts(title, posts);
 }
 
+const ogpCache = new Map();
+const PREVIEW_UA = 'Mozilla/5.0 (compatible; 2chMatomeViewer-LinkPreview/0.1)';
+
 // ---- app.js から呼ばれる API (server/index.js の HTTP API と同じ形) ----
 export const localApi = {
   async boards() {
-    return DEFAULT_BOARDS.map(({ id, name, site }) => ({ id, name, site }));
+    return DEFAULT_BOARDS.map(({ id, name, site, adult }) => ({ id, name, site, adult: !!adult }));
   },
   async threads(params) {
     return listThreads(db, params, { threshold: KAMI_THRESHOLD, boardName: (id) => boardById(id)?.name || id });
   },
   refresh,
+  async ogp(url) {
+    if (!ogpCache.has(url)) {
+      const p = request(url, { headers: { 'User-Agent': PREVIEW_UA, 'Accept-Language': 'ja' } }).then((html) => parseOgp(html, url));
+      p.catch(() => ogpCache.delete(url));
+      ogpCache.set(url, p);
+      if (ogpCache.size > 300) ogpCache.delete(ogpCache.keys().next().value);
+    }
+    return ogpCache.get(url);
+  },
   async thread(boardId, key, force = false) {
     const board = boardById(boardId);
     const data = await getThread(board, key, force);

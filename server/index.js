@@ -6,6 +6,8 @@ import { db, save, flush, tid, upsertThread } from './store.js';
 import { startCollector, refreshNow, getThread, judgeKami, KAMI_THRESHOLD } from './collector.js';
 import { momentum } from '../public/lib/score.js';
 import { listThreads } from '../public/lib/db.js';
+import { parseOgp } from '../public/lib/links.js';
+import { decodeBytes } from '../public/lib/encoding.js';
 import { generateScript } from './video.js';
 
 if (process.env.DEMO) setFetcher((await import('../public/lib/demo.js')).demoFetcher);
@@ -15,7 +17,7 @@ const PUBLIC = path.resolve('public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.webmanifest': 'application/manifest+json' };
 
 const boardById = (id) => getBoard(id) || db.boards[id];
-const boardInfo = (b) => ({ id: b.id, name: b.name, site: b.site });
+const boardInfo = (b) => ({ id: b.id, name: b.name, site: b.site, adult: !!b.adult });
 
 function send(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -31,6 +33,31 @@ async function readJson(req) {
   return s ? JSON.parse(s) : {};
 }
 
+// リンクプレビュー。内部ネットワークへのアクセスは拒否 (SSRF 対策)
+const ogpCache = new Map();
+const PRIVATE_HOST = /^(localhost|.*\.local|.*\.internal|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.|\[|::1)/i;
+async function fetchOgp(target) {
+  const u = new URL(target);
+  if (!/^https?:$/.test(u.protocol) || PRIVATE_HOST.test(u.hostname) || /^\d+$/.test(u.hostname)) throw new Error('対象外のURLです');
+  if (ogpCache.has(u.href)) return ogpCache.get(u.href);
+  const r = await fetch(u, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; 2chMatomeViewer-LinkPreview/0.1)', 'Accept-Language': 'ja' }, redirect: 'follow', signal: AbortSignal.timeout(10000) });
+  if (PRIVATE_HOST.test(new URL(r.url).hostname)) throw new Error('対象外のURLです');
+  const reader = r.body.getReader();
+  const chunks = [];
+  let size = 0;
+  while (size < 1_000_000) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    size += value.length;
+  }
+  reader.cancel().catch(() => {});
+  const data = parseOgp(decodeBytes(new Uint8Array(Buffer.concat(chunks))), r.url);
+  ogpCache.set(u.href, data);
+  if (ogpCache.size > 1000) ogpCache.delete(ogpCache.keys().next().value);
+  return data;
+}
+
 const generating = new Map();
 
 async function api(req, res, url) {
@@ -39,6 +66,10 @@ async function api(req, res, url) {
 
   if (req.method === 'GET' && p[1] === 'threads') {
     return send(res, 200, listThreads(db, Object.fromEntries(url.searchParams), { threshold: KAMI_THRESHOLD, boardName: (id) => boardById(id)?.name || id }));
+  }
+
+  if (req.method === 'GET' && p[1] === 'ogp') {
+    return send(res, 200, await fetchOgp(url.searchParams.get('url') || ''));
   }
 
   if (req.method === 'POST' && p[1] === 'refresh') {

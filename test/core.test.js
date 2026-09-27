@@ -69,3 +69,31 @@ test('decodeBytes: Shift_JIS(CP932) と UTF-8 を自動判定', async () => {
   assert.equal(decodeBytes(new TextEncoder().encode('﻿おんJ (12)')), 'おんJ (12)');
   assert.equal(decodeBytes(base64ToBytes(Buffer.from('テスト').toString('base64'))), 'テスト');
 });
+
+test('parseReadCgi: 実際の 5ch HTML (2026/09 時点)', async () => {
+  const fs = await import('node:fs');
+  const t = parseReadCgi(fs.readFileSync(new URL('./fixtures/5ch-readcgi.html', import.meta.url), 'utf8'));
+  assert.equal(t.posts.length, 5);
+  assert.equal(t.posts[1].name, '風吹けば名無し');
+  assert.equal(t.posts[1].body, 'ねむい');
+  assert.ok(t.posts[0].id);
+  assert.ok(!t.posts[0].body.includes('!extend'));
+});
+
+test('links: URL抽出と種類判定', async () => {
+  const { splitLinks, classifyUrl, parseOgp } = await import('../public/lib/links.js');
+  const urls = splitLinks('見て youtu.be/Jr4bYLjNYpM と ttps://i.imgur.com/abcDE12.png、https://imgur.com/XyZ1234。').filter((p) => p.url);
+  assert.deepEqual(urls.map((u) => classifyUrl(u.url).type), ['youtube', 'image', 'image']);
+  assert.equal(classifyUrl(urls[2].url).src, 'https://i.imgur.com/XyZ1234.jpg');
+  assert.equal(classifyUrl('https://example.com/').type, 'page');
+  assert.equal(classifyUrl('https://i.imgur.com/abc.gifv').type, 'video');
+  const o = parseOgp('<meta property="og:title" content="タイトル"><meta property="og:image" content="/a.png">', 'https://ex.com/p');
+  assert.deepEqual([o.title, o.image, o.site], ['タイトル', 'https://ex.com/a.png', 'ex.com']);
+});
+
+test('parseBbsmenu / resolveThreadUrl (BBSPINK)', async () => {
+  const { parseBbsmenu } = await import('../public/lib/boards.js');
+  const m = parseBbsmenu(JSON.stringify({ menu_list: [{ category_content: [{ directory_name: 'livejupiter', url: 'https://eagle.5ch.io/livejupiter/' }] }] }));
+  assert.equal(m.livejupiter, 'https://eagle.5ch.io/livejupiter/');
+  assert.equal(resolveThreadUrl('https://phoebe.bbspink.com/test/read.cgi/megami/1789209258/').board.id, 'pink-megami');
+});

@@ -1,4 +1,6 @@
 import { Player } from './player.js';
+import { splitLinks, classifyUrl } from './lib/links.js';
+import { resolveThreadUrl } from './lib/boards.js';
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -15,6 +17,7 @@ const httpApi = {
   threads: (params) => api(`/api/threads?${new URLSearchParams(params)}`),
   thread: (board, key, force) => api(`/api/thread/${board}/${key}${force ? '?force=1' : ''}`),
   refresh: () => api('/api/refresh', json({})),
+  ogp: (url) => api(`/api/ogp?url=${encodeURIComponent(url)}`),
   importUrl: (url) => api('/api/import', json({ url })),
   video: (board, key, regenerate) => api(`/api/video/${board}/${key}`, json({ regenerate })),
 };
@@ -32,10 +35,16 @@ async function init() {
     setupSettings();
   }
   const boards = await backend.boards();
-  $('#boards').innerHTML = [{ id: '', name: 'すべて' }, ...boards].map((b) => `<button data-b="${b.id}" class="${b.id === '' ? 'on' : ''}">${esc(b.name)}</button>`).join('');
+  state.adultBoards = new Set(boards.filter((b) => b.adult).map((b) => b.id));
+  $('#boards').innerHTML = [{ id: '', name: 'すべて' }, ...boards].map((b) => `<button data-b="${b.id}" class="${b.id === '' ? 'on' : ''}">${esc(b.name)}${b.adult ? '🔞' : ''}</button>`).join('');
   $('#boards').onclick = (e) => {
     const b = e.target.closest('button');
     if (!b) return;
+    // 成人向け板 (BBSPINK) は初回に年齢確認。「すべて」には含めない
+    if (state.adultBoards.has(b.dataset.b) && localStorage.getItem('adultOk') !== '1') {
+      if (!confirm('成人向けの板です。18歳以上ですか？')) return;
+      localStorage.setItem('adultOk', '1');
+    }
     state.board = b.dataset.b;
     [...$('#boards').children].forEach((x) => x.classList.toggle('on', x === b));
     loadList();
@@ -102,7 +111,9 @@ async function reloadList() {
 const titles = new Map(); // 一覧で見たスレタイ (スレを開いた瞬間に表示するため)
 
 async function loadList() {
-  const list = await backend.threads({ mode: state.mode, board: state.board, q: state.q }).catch(() => []);
+  const list = (await backend.threads({ mode: state.mode, board: state.board, q: state.q }).catch(() => [])).filter(
+    (t) => state.board || !state.adultBoards?.has(t.board)
+  );
   list.forEach((t) => titles.set(`${t.board}/${t.key}`, t.title));
   const fmt = (n) => (n >= 10000 ? `${(n / 10000).toFixed(1)}万` : n);
   $('#list').innerHTML = list.length
@@ -159,11 +170,13 @@ async function showThread(board, key, force = false) {
         .map(
           (p) => `<div class="post ${op && p.id === op ? 'op' : ''}" id="r${p.no}">
       <div class="h">${p.no} <b>${esc(p.name)}</b> ${esc(p.date)} ${p.id ? `ID:${esc(p.id)}(${counts[p.id]})` : ''}${op && p.id === op ? ' [イッチ]' : ''}</div>
-      <div class="b">${esc(p.body).replace(/&gt;&gt;(\d{1,4})/g, '<span class="anc" data-n="$1">&gt;&gt;$1</span>')}</div></div>`
+      ${renderBody(p.body)}</div>`
         )
         .join('') + `<p><a href="${esc(t.source)}" target="_blank" rel="noopener" style="color:var(--sub)">元スレを開く</a></p>`;
+    observePreviews();
     $('#posts').onclick = (e) => {
       document.querySelector('.pop')?.remove();
+      if (openMedia(e)) return;
       const a = e.target.closest('.anc');
       if (!a) return;
       const src = document.getElementById(`r${a.dataset.n}`);
@@ -178,6 +191,83 @@ async function showThread(board, key, force = false) {
   } finally {
     $('#treload').disabled = false;
   }
+}
+
+// ---- 本文のリンク: 画像/動画はサムネ、YouTube はサムネ、その他のページは OGP カード ----
+const anchorize = (t) => esc(t).replace(/&gt;&gt;(\d{1,4})/g, '<span class="anc" data-n="$1">&gt;&gt;$1</span>');
+
+function renderBody(body) {
+  const media = [];
+  const cards = [];
+  const text = splitLinks(body)
+    .map((part) => {
+      if (part.text != null) return anchorize(part.text);
+      const c = classifyUrl(part.url);
+      const thread = resolveThreadUrl(part.url);
+      if (thread && !thread.board.adhoc) {
+        return `<a class="ext" href="#/t/${thread.board.id}/${thread.key}">${esc(part.raw)}</a>`;
+      }
+      if (c.type === 'image') media.push(`<img class="thumb" loading="lazy" referrerpolicy="no-referrer" src="${esc(c.src)}" data-full="${esc(c.src)}" data-link="${esc(part.url)}" onerror="this.classList.add('broken')">`);
+      else if (c.type === 'video') media.push(`<video class="thumb" preload="metadata" muted playsinline src="${esc(c.src)}" data-full="${esc(c.src)}" data-video="1"></video>`);
+      else if (c.type === 'youtube') media.push(`<a class="yt" href="${esc(part.url)}" target="_blank" rel="noopener"><img class="thumb" loading="lazy" src="${esc(c.src)}"><span>▶</span></a>`);
+      else if (c.type === 'page' && cards.length < 3) cards.push(`<a class="ogp" data-url="${esc(part.url)}" href="${esc(part.url)}" target="_blank" rel="noopener"><span class="os">${esc(new URL(part.url).hostname)}</span></a>`);
+      return `<a class="ext" href="${esc(part.url)}" target="_blank" rel="noopener">${esc(part.raw)}</a>`;
+    })
+    .join('');
+  return `<div class="b">${text}</div>${media.length ? `<div class="media">${media.join('')}</div>` : ''}${cards.join('')}`;
+}
+
+// 画面に入ったカードだけ OGP を取得 (同時3件まで)
+let previewObserver;
+const ogpQueue = [];
+let ogpActive = 0;
+function observePreviews() {
+  previewObserver?.disconnect();
+  previewObserver = new IntersectionObserver(
+    (entries) => {
+      for (const en of entries) {
+        if (!en.isIntersecting) continue;
+        previewObserver.unobserve(en.target);
+        ogpQueue.push(en.target);
+      }
+      pumpOgp();
+    },
+    { rootMargin: '300px' }
+  );
+  document.querySelectorAll('#posts .ogp').forEach((el) => previewObserver.observe(el));
+}
+function pumpOgp() {
+  while (ogpActive < 3 && ogpQueue.length) {
+    const el = ogpQueue.shift();
+    ogpActive++;
+    backend
+      .ogp(el.dataset.url)
+      .then((o) => {
+        if (!o.title && !o.image) return;
+        el.innerHTML = `${o.image ? `<img loading="lazy" referrerpolicy="no-referrer" src="${esc(o.image)}" onerror="this.remove()">` : ''}<span class="ot">${esc(o.title || o.url)}</span>${o.description ? `<span class="od">${esc(o.description)}</span>` : ''}<span class="os">${esc(o.site)}</span>`;
+        el.classList.add('loaded');
+      })
+      .catch(() => {})
+      .finally(() => {
+        ogpActive--;
+        pumpOgp();
+      });
+  }
+}
+
+// 画像・動画をタップで全画面表示 (もう一度タップで閉じる / 長押しなしで元URLは下部リンク)
+function openMedia(e) {
+  const m = e.target.closest('.thumb[data-full]');
+  if (!m) return false;
+  e.preventDefault();
+  const v = document.createElement('div');
+  v.id = 'viewer';
+  v.innerHTML = m.dataset.video
+    ? `<video src="${esc(m.dataset.full)}" controls autoplay loop playsinline></video>`
+    : `<img referrerpolicy="no-referrer" src="${esc(m.dataset.full)}"><a href="${esc(m.dataset.link || m.dataset.full)}" target="_blank" rel="noopener">元のリンクを開く</a>`;
+  v.onclick = (ev) => ev.target.tagName !== 'VIDEO' && ev.target.tagName !== 'A' && v.remove();
+  document.body.append(v);
+  return true;
 }
 
 async function showPlayer(board, key, regenerate = false) {

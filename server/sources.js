@@ -1,7 +1,7 @@
 // 掲示板からの取得処理 (Node)。ホストは移転が多いので環境変数 BOARDS_JSON で差し替え可能。
-import { parseSubject, parseDat, parseReadCgi } from '../public/lib/parse.js';
+import { parseDat, parseReadCgi } from '../public/lib/parse.js';
 import { decodeBytes } from '../public/lib/encoding.js';
-import { DEFAULT_BOARDS, threadUrl, resolveThreadUrl as resolve } from '../public/lib/boards.js';
+import { DEFAULT_BOARDS, threadUrl, resolveThreadUrl as resolve, fetchSubjectList } from '../public/lib/boards.js';
 
 export { DEFAULT_BOARDS, threadUrl };
 export const BOARDS = process.env.BOARDS_JSON ? JSON.parse(process.env.BOARDS_JSON) : DEFAULT_BOARDS;
@@ -25,8 +25,7 @@ export function setFetcher(fn) {
 }
 
 export async function fetchSubject(board) {
-  const text = await fetcher(new URL('subject.txt', board.base).href, board.encoding);
-  return parseSubject(text);
+  return fetchSubjectList(board, (url) => fetcher(url));
 }
 
 // dat を試し、ダメなら read.cgi の HTML を解析
