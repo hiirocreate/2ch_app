@@ -97,3 +97,12 @@ test('parseBbsmenu / resolveThreadUrl (BBSPINK)', async () => {
   assert.equal(m.livejupiter, 'https://eagle.5ch.io/livejupiter/');
   assert.equal(resolveThreadUrl('https://phoebe.bbspink.com/test/read.cgi/megami/1789209258/').board.id, 'pink-megami');
 });
+
+test('parseReadCgi: BBSPINK (<article> レイアウト)', async () => {
+  const fs = await import('node:fs');
+  const t = parseReadCgi(fs.readFileSync(new URL('./fixtures/bbspink-readcgi.html', import.meta.url), 'utf8'));
+  assert.equal(t.title, 'テストスレ');
+  assert.equal(t.posts.length, 2);
+  assert.equal(t.posts[0].body, 'スレ立てテスト\n2行目');
+  assert.deepEqual([t.posts[1].id, t.posts[1].body], ['bbbb0002', '>>1\n乙']);
+});

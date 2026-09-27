@@ -62,15 +62,16 @@ export function parseReadCgi(html) {
   const tm = html.match(/<title>([\s\S]*?)<\/title>/i);
   const title = tm ? htmlToText(tm[1]) : '';
   const posts = [];
-  const re = /<div[^>]*\bid="(\d+)"[^>]*class="[^"]*\bpost\b[^"]*"[^>]*>([\s\S]*?)(?=<div[^>]*\bid="\d+"[^>]*class="[^"]*\bpost\b|<\/section>|<div class="(?:navmenu|pagestats|bottom)|$)/gi;
-  let m;
-  while ((m = re.exec(html))) {
-    const block = m[2];
+  // 5ch は <div id="N" class="clear post">、BBSPINK は <article id="N" class="clear post">
+  const starts = [...html.matchAll(/<(?:div|article)\b[^>]*\bid="(\d+)"[^>]*class="[^"]*\bpost\b[^"]*"[^>]*>/gi)];
+  starts.forEach((m, i) => {
+    const end = starts[i + 1]?.index ?? Math.min(html.length, m.index + 30000);
+    const block = html.slice(m.index + m[0].length, end);
     const pick = (cls) => {
-      const r = block.match(new RegExp(`class="[^"]*\\b${cls}\\b[^"]*"[^>]*>([\\s\\S]*?)<\\/(?:span|div|dd)>`, 'i'));
+      const r = block.match(new RegExp(`class="[^"]*\\b${cls}\\b[^"]*"[^>]*>([\\s\\S]*?)<\\/(?:span|div|dd|section)>`, 'i'));
       return r ? r[1] : '';
     };
-    const uid = block.match(/ID:([^\s<"]+)/) || m[0].match(/data-userid="ID:([^"]+)"/);
+    const uid = m[0].match(/data-userid="ID:([^"]+)"/) || block.match(/ID:([^\s<"]+)/);
     posts.push({
       no: Number(m[1]),
       name: htmlToText((block.match(/class="postusername"[^>]*>\s*<b>([\s\S]*?)<\/b>/i) || [])[1] ?? pick('name')),
@@ -79,7 +80,7 @@ export function parseReadCgi(html) {
       id: uid ? uid[1] : '',
       body: cleanBody(htmlToText(pick('(?:post-content|message|escaped)'))),
     });
-  }
+  });
   return { title, posts };
 }
 
