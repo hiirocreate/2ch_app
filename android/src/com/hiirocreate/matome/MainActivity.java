@@ -33,7 +33,8 @@ import java.util.concurrent.Executors;
  */
 public class MainActivity extends Activity {
     private static final String HOST = "appassets.local";
-    private static final String UA = "Mozilla/5.0 (Linux; Android) 2chMatomeViewer/0.1";
+    // スマホ UA だとスマホ版 (itest, JS 描画でレスが HTML に無い) へ転送されることがあるため PC 版の UA を使う
+    private static final String UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
 
     private WebView web;
     private TextToSpeech tts;

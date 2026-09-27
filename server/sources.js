@@ -1,5 +1,5 @@
 // 掲示板からの取得処理 (Node)。ホストは移転が多いので環境変数 BOARDS_JSON で差し替え可能。
-import { parseDat, parseReadCgi } from '../public/lib/parse.js';
+import { fetchThreadData } from '../public/lib/thread.js';
 import { decodeBytes } from '../public/lib/encoding.js';
 import { DEFAULT_BOARDS, threadUrl, resolveThreadUrl as resolve, fetchSubjectList } from '../public/lib/boards.js';
 
@@ -12,7 +12,7 @@ export function getBoard(id) {
 
 export const resolveThreadUrl = (url) => resolve(url, BOARDS);
 
-const UA = process.env.USER_AGENT || 'Mozilla/5.0 (compatible; 2chMatomeViewer/0.1)';
+const UA = process.env.USER_AGENT || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36';
 
 // テスト/デモ用に差し替え可能なフェッチャ
 let fetcher = async (url) => {
@@ -28,17 +28,4 @@ export async function fetchSubject(board) {
   return fetchSubjectList(board, (url) => fetcher(url));
 }
 
-// dat を試し、ダメなら read.cgi の HTML を解析
-export async function fetchThread(board, key) {
-  try {
-    const text = await fetcher(new URL(`dat/${key}.dat`, board.base).href, board.encoding);
-    const t = parseDat(text);
-    if (t.posts.length) return t;
-  } catch {
-    /* fallthrough */
-  }
-  const html = await fetcher(threadUrl(board, key), board.encoding);
-  const t = parseReadCgi(html);
-  if (!t.posts.length) throw new Error('スレッドを解析できませんでした');
-  return t;
-}
+export const fetchThread = (board, key) => fetchThreadData(board, key, (url) => fetcher(url));

@@ -1,6 +1,7 @@
 // Android アプリ用の端末内バックエンド。サーバー(server/)と同じ処理を WebView 内で行う。
 // 通信は Java 側の AndroidBridge 経由 (CORS 回避・Shift_JIS 変換)、保存は localStorage。
 import { decodeBytes, base64ToBytes } from './lib/encoding.js';
+import { fetchThreadData } from './lib/thread.js';
 import { DEFAULT_BOARDS, threadUrl, resolveThreadUrl, fetchSubjectList } from './lib/boards.js';
 import { parseSubject, parseDat, parseReadCgi } from './lib/parse.js';
 import { momentum, kamiScore } from './lib/score.js';
@@ -65,23 +66,8 @@ const boardById = (id) => DEFAULT_BOARDS.find((b) => b.id === id) || db.boards[i
 
 // ---- 取得 ----
 const cache = new Map();
-// dat が取れない板を記憶し、次回から read.cgi を直接取りに行く (無駄な往復を省く)
-const noDat = new Set(JSON.parse(localStorage.getItem('noDat') || '[]'));
-async function fetchThread(board, key) {
-  if (!noDat.has(board.id)) {
-    try {
-      const t = parseDat(await fetchText(new URL(`dat/${key}.dat`, board.base).href));
-      if (t.posts.length) return t;
-    } catch {
-      /* fallthrough */
-    }
-    noDat.add(board.id);
-    localStorage.setItem('noDat', JSON.stringify([...noDat]));
-  }
-  const t = parseReadCgi(await fetchText(threadUrl(board, key)));
-  if (!t.posts.length) throw new Error('スレッドを解析できませんでした');
-  return t;
-}
+localStorage.removeItem('noDat'); // 旧版の「dat 不可」記憶は誤判定の原因になるので破棄
+const fetchThread = (board, key) => fetchThreadData(board, key, fetchText);
 
 async function getThread(board, key, force = false) {
   const id = tid(board.id, key);

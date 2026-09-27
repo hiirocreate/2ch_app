@@ -106,3 +106,24 @@ test('parseReadCgi: BBSPINK (<article> レイアウト)', async () => {
   assert.equal(t.posts[0].body, 'スレ立てテスト\n2行目');
   assert.deepEqual([t.posts[1].id, t.posts[1].body], ['bbbb0002', '>>1\n乙']);
 });
+
+test('fetchThreadData: サイト別の取得順とフォールバック', async () => {
+  const { fetchThreadData } = await import('../public/lib/thread.js');
+  const dat = '名無し<><>2026/09/28 ID:a<> 本文 <>タイトル\n';
+  const html = '<title>t</title><div class="clear post" data-userid="ID:x" id="1"><span class="postusername"><b>n</b></span><div class="post-content">属性順が逆</div></div>';
+  const calls = [];
+  const mk = (map) => async (url) => {
+    calls.push(url);
+    for (const [k, v] of Object.entries(map)) if (url.includes(k)) return v;
+    throw new Error('HTTP 404');
+  };
+  const open = { id: 'open-x', site: 'open2ch', base: 'https://h.open2ch.net/x/' };
+  const five = { id: '5ch-x', site: '5ch', base: 'https://e.5ch.io/x/' };
+  assert.equal((await fetchThreadData(open, '1790000000', mk({ '.dat': dat }))).posts[0].body, '本文');
+  assert.ok(calls[0].endsWith('.dat'));
+  calls.length = 0;
+  assert.equal((await fetchThreadData(five, '1790000000', mk({ 'read.cgi': html }))).posts[0].body, '属性順が逆');
+  assert.ok(calls[0].includes('read.cgi'));
+  assert.equal((await fetchThreadData(five, '1790000000', mk({ 'read.cgi': '<title>エラー</title>', '.dat': dat }))).posts.length, 1);
+  await assert.rejects(fetchThreadData(five, '1790000000', mk({ 'read.cgi': '<title>エラー</title>' })), /エラー/);
+});

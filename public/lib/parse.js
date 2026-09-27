@@ -63,7 +63,11 @@ export function parseReadCgi(html) {
   const title = tm ? htmlToText(tm[1]) : '';
   const posts = [];
   // 5ch は <div id="N" class="clear post">、BBSPINK は <article id="N" class="clear post">
-  const starts = [...html.matchAll(/<(?:div|article)\b[^>]*\bid="(\d+)"[^>]*class="[^"]*\bpost\b[^"]*"[^>]*>/gi)];
+  // 属性の順序に依存しないよう、タグを拾ってから id と class を個別に確認
+  const starts = [...html.matchAll(/<(?:div|article)\b[^>]*>/gi)]
+    .filter((m) => /\bclass="[^"]*\bpost\b[^"]*"/i.test(m[0]))
+    .map((m) => Object.assign(m, { 1: m[0].match(/\bid="(\d+)"/)?.[1] }))
+    .filter((m) => m[1]);
   starts.forEach((m, i) => {
     const end = starts[i + 1]?.index ?? Math.min(html.length, m.index + 30000);
     const block = html.slice(m.index + m[0].length, end);
