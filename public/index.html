@@ -10,7 +10,7 @@
 </head>
 <body>
 <header>
-  <h1>スレまとめ</h1>
+  <h1>スレまとめ <button id="reload" title="更新">↻</button></h1>
   <nav id="tabs">
     <button data-mode="live" class="on">リアルタイム</button>
     <button data-mode="history">過去の人気</button>
@@ -28,7 +28,7 @@
 </form>
 
 <section id="thread" hidden>
-  <div class="bar"><button id="back">←</button><span id="ttitle"></span><button id="mkvideo">🎬 動画化</button></div>
+  <div class="bar"><button id="back">←</button><span id="ttitle"></span><button id="treload" title="再読み込み">↻</button><button id="mkvideo">🎬</button></div>
   <div id="posts"></div>
 </section>
 

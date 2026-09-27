@@ -35,3 +35,7 @@ canvas{width:100%;aspect-ratio:16/9;background:#000;border-radius:8px;display:bl
 #pseek{flex:1;min-width:120px}
 #psummary{max-width:1000px;margin:8px auto;padding:0 12px;color:var(--sub)}
 h1{display:flex;justify-content:space-between;align-items:center}#settings{padding:2px 8px}
+#ttitle{white-space:normal;overflow:visible;word-break:break-all;line-height:1.4;font-size:15px}
+.bar{align-items:flex-start}.bar button{flex-shrink:0}
+h1 button{margin-left:auto;margin-right:6px;padding:2px 8px}
+.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { BOARDS, getBoard, setFetcher, resolveThreadUrl, threadUrl } from './sources.js';
 import { db, save, flush, tid, upsertThread } from './store.js';
-import { startCollector, getThread, judgeKami, KAMI_THRESHOLD } from './collector.js';
+import { startCollector, refreshNow, getThread, judgeKami, KAMI_THRESHOLD } from './collector.js';
 import { momentum } from '../public/lib/score.js';
 import { listThreads } from '../public/lib/db.js';
 import { generateScript } from './video.js';
@@ -41,6 +41,11 @@ async function api(req, res, url) {
     return send(res, 200, listThreads(db, Object.fromEntries(url.searchParams), { threshold: KAMI_THRESHOLD, boardName: (id) => boardById(id)?.name || id }));
   }
 
+  if (req.method === 'POST' && p[1] === 'refresh') {
+    await refreshNow();
+    return send(res, 200, { ok: true });
+  }
+
   if (req.method === 'POST' && p[1] === 'import') {
     const { url: turl } = await readJson(req);
     const r = resolveThreadUrl(String(turl || ''));
@@ -60,7 +65,7 @@ async function api(req, res, url) {
   const id = tid(board.id, key);
 
   if (req.method === 'GET' && kind === 'thread') {
-    const data = await getThread(board, key);
+    const data = await getThread(board, key, { force: url.searchParams.has('force') });
     return send(res, 200, { ...data, meta: db.threads[id] || null, board: boardInfo(board), source: threadUrl(board, key) });
   }
 

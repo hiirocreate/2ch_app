@@ -64,14 +64,20 @@ const boardById = (id) => DEFAULT_BOARDS.find((b) => b.id === id) || db.boards[i
 
 // ---- 取得 ----
 const cache = new Map();
+// dat が取れない板を記憶し、次回から read.cgi を直接取りに行く (無駄な往復を省く)
+const noDat = new Set(JSON.parse(localStorage.getItem('noDat') || '[]'));
 async function fetchThread(board, key) {
-  try {
-    const t = parseDat(await fetchText(new URL(`dat/${key}.dat`, board.base).href, board.encoding));
-    if (t.posts.length) return t;
-  } catch {
-    /* fallthrough */
+  if (!noDat.has(board.id)) {
+    try {
+      const t = parseDat(await fetchText(new URL(`dat/${key}.dat`, board.base).href));
+      if (t.posts.length) return t;
+    } catch {
+      /* fallthrough */
+    }
+    noDat.add(board.id);
+    localStorage.setItem('noDat', JSON.stringify([...noDat]));
   }
-  const t = parseReadCgi(await fetchText(threadUrl(board, key), board.encoding));
+  const t = parseReadCgi(await fetchText(threadUrl(board, key)));
   if (!t.posts.length) throw new Error('スレッドを解析できませんでした');
   return t;
 }
@@ -101,32 +107,52 @@ async function judgeKami(board, t) {
 }
 
 let crawling = null;
-async function crawl() {
-  for (const board of DEFAULT_BOARDS) {
-    try {
-      const list = parseSubject(await fetchText(new URL('subject.txt', board.base).href, board.encoding));
-      const now = Date.now();
-      const seen = list.map((t) => upsertThread(db, board, t, momentum(t.key, t.resCount, now / 1000), now));
-      const cands = seen
-        .filter((t) => !t.kami && (t.resCount >= 900 || t.momentum >= 20000))
-        .sort((a, b) => b.maxMomentum - a.maxMomentum)
-        .slice(0, 2);
-      for (const t of cands) await judgeKami(board, t).catch(() => {});
-    } catch (e) {
-      console.warn(`[crawl] ${board.name}: ${e.message}`);
-    }
+// 全板の subject.txt を並列取得し、板ごとに即座に一覧へ反映。神スレ判定(本文取得)は後回しでバックグラウンド実行。
+async function crawl(onUpdate) {
+  const now = Date.now();
+  await Promise.all(
+    DEFAULT_BOARDS.map(async (board) => {
+      try {
+        const list = parseSubject(await fetchText(new URL('subject.txt', board.base).href));
+        list.forEach((t) => upsertThread(db, board, t, momentum(t.key, t.resCount, now / 1000), now));
+        onUpdate?.();
+      } catch (e) {
+        console.warn(`[crawl] ${board.name}: ${e.message}`);
+      }
+    })
+  );
+  save();
+  judgeInBackground(now, onUpdate); // 更新完了を待たせない
+}
+
+let judging = false;
+async function judgeInBackground(now, onUpdate) {
+  if (judging) return;
+  judging = true;
+  const cands = Object.values(db.threads)
+    .filter((t) => !t.kami && t.lastSeen >= now && (t.resCount >= 900 || t.momentum >= 20000))
+    .sort((a, b) => b.maxMomentum - a.maxMomentum)
+    .slice(0, 6);
+  for (const t of cands) {
+    await judgeKami(boardById(t.board), t).catch(() => {});
+    onUpdate?.();
   }
   prune(db, 3000, 30);
   save();
+  judging = false;
 }
-export function startCrawl(onDone) {
-  const run = () => {
-    if (document.hidden || crawling) return;
-    crawling = crawl().finally(() => ((crawling = null), onDone?.()));
-  };
+let onCrawlUpdate;
+export function refresh() {
+  if (!crawling) crawling = crawl(onCrawlUpdate).finally(() => (crawling = null));
+  return crawling;
+}
+export const isCrawling = () => !!crawling;
+export function startCrawl(onUpdate) {
+  onCrawlUpdate = onUpdate;
+  const run = () => !document.hidden && refresh();
   run();
   setInterval(run, CRAWL_MS);
-  document.addEventListener('visibilitychange', () => !document.hidden && run());
+  document.addEventListener('visibilitychange', run);
 }
 
 // ---- 動画台本 ----
@@ -153,12 +179,12 @@ export const localApi = {
     return DEFAULT_BOARDS.map(({ id, name, site }) => ({ id, name, site }));
   },
   async threads(params) {
-    if (!Object.keys(db.threads).length && crawling) await crawling;
     return listThreads(db, params, { threshold: KAMI_THRESHOLD, boardName: (id) => boardById(id)?.name || id });
   },
-  async thread(boardId, key) {
+  refresh,
+  async thread(boardId, key, force = false) {
     const board = boardById(boardId);
-    const data = await getThread(board, key);
+    const data = await getThread(board, key, force);
     return { ...data, meta: db.threads[tid(board.id, key)] || null, board: { id: board.id, name: board.name }, source: threadUrl(board, key) };
   },
   async importUrl(url) {

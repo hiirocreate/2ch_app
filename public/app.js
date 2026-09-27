@@ -13,7 +13,8 @@ const json = (body) => ({ method: 'POST', headers: { 'Content-Type': 'applicatio
 const httpApi = {
   boards: () => api('/api/boards'),
   threads: (params) => api(`/api/threads?${new URLSearchParams(params)}`),
-  thread: (board, key) => api(`/api/thread/${board}/${key}`),
+  thread: (board, key, force) => api(`/api/thread/${board}/${key}${force ? '?force=1' : ''}`),
+  refresh: () => api('/api/refresh', json({})),
   importUrl: (url) => api('/api/import', json({ url })),
   video: (board, key, regenerate) => api(`/api/video/${board}/${key}`, json({ regenerate })),
 };
@@ -27,7 +28,7 @@ async function init() {
   if (native) {
     const m = await import('./local-api.js');
     backend = m.localApi;
-    m.startCrawl(() => loadList());
+    m.startCrawl(throttle(loadList, 400));
     setupSettings();
   }
   const boards = await backend.boards();
@@ -63,6 +64,11 @@ async function init() {
       alert(`追加できませんでした: ${err.message}`);
     }
   };
+  $('#reload').onclick = reloadList;
+  $('#treload').onclick = () => {
+    const [, , board, key] = location.hash.split('/');
+    showThread(board, key, true);
+  };
   $('#back').onclick = () => history.back();
   $('#mkvideo').onclick = () => openPlayer(state.current.board.id, state.current.key);
   $('#pclose').onclick = () => history.back();
@@ -73,8 +79,31 @@ async function init() {
   if (!native && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
+function throttle(fn, ms) {
+  let t = null;
+  return () => t || (t = setTimeout(() => ((t = null), fn()), ms));
+}
+
+async function reloadList() {
+  const btn = $('#reload');
+  if (btn.disabled) return;
+  btn.disabled = true;
+  btn.classList.add('spin');
+  try {
+    await backend.refresh();
+  } catch (e) {
+    alert(`更新に失敗しました: ${e.message}`);
+  }
+  btn.disabled = false;
+  btn.classList.remove('spin');
+  loadList();
+}
+
+const titles = new Map(); // 一覧で見たスレタイ (スレを開いた瞬間に表示するため)
+
 async function loadList() {
   const list = await backend.threads({ mode: state.mode, board: state.board, q: state.q }).catch(() => []);
+  list.forEach((t) => titles.set(`${t.board}/${t.key}`, t.title));
   const fmt = (n) => (n >= 10000 ? `${(n / 10000).toFixed(1)}万` : n);
   $('#list').innerHTML = list.length
     ? list
@@ -113,12 +142,13 @@ async function route() {
   if (kind === 'v') await showPlayer(board, key);
 }
 
-async function showThread(board, key) {
-  if (state.current?.key === key && state.current.board.id === board) return;
-  $('#ttitle').textContent = '読み込み中…';
-  $('#posts').innerHTML = '';
+async function showThread(board, key, force = false) {
+  if (!force && state.current?.key === key && state.current.board.id === board) return;
+  $('#ttitle').textContent = titles.get(`${board}/${key}`) || state.current?.meta?.title || '';
+  $('#posts').innerHTML = '<div class="empty">読み込み中…</div>';
+  $('#treload').disabled = true;
   try {
-    const t = await backend.thread(board, key);
+    const t = await backend.thread(board, key, force);
     state.current = { ...t, key };
     $('#ttitle').textContent = t.meta?.title || t.title;
     const op = t.posts[0]?.id;
@@ -144,7 +174,9 @@ async function showThread(board, key) {
       document.body.append(pop);
     };
   } catch (e) {
-    $('#ttitle').textContent = `取得失敗: ${e.message}`;
+    $('#posts').innerHTML = `<div class="empty">取得失敗: ${esc(e.message)}<br>↻ で再読み込み</div>`;
+  } finally {
+    $('#treload').disabled = false;
   }
 }
 

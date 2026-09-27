@@ -123,8 +123,8 @@ public class MainActivity extends Activity {
                 try {
                     c = (HttpURLConnection) new URL(url).openConnection();
                     c.setRequestMethod(method);
-                    c.setConnectTimeout(15000);
-                    c.setReadTimeout(url.contains("api.anthropic.com") ? 600000 : 30000);
+                    c.setConnectTimeout(8000);
+                    c.setReadTimeout(url.contains("api.anthropic.com") ? 600000 : 20000);
                     c.setRequestProperty("User-Agent", UA);
                     JSONObject h = new JSONObject(headersJson == null || headersJson.isEmpty() ? "{}" : headersJson);
                     for (Iterator<String> it = h.keys(); it.hasNext(); ) {

@@ -57,8 +57,14 @@ export async function crawlOnce(log = console) {
   save();
 }
 
+let running = null;
+export function refreshNow() {
+  if (!running) running = crawlOnce().finally(() => (running = null));
+  return running;
+}
+
 export function startCollector(intervalMin = Number(process.env.CRAWL_INTERVAL_MIN || 5)) {
-  const run = () => crawlOnce().catch((e) => console.error(e));
+  const run = () => refreshNow().catch((e) => console.error(e));
   run();
   return setInterval(run, intervalMin * 60_000);
 }
