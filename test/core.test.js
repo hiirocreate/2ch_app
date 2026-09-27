@@ -61,3 +61,11 @@ test('demo kami thread scores higher and produces a script', async () => {
   assert.equal(sc.scenes[1].speaker, 'op');
   assert.ok(sc.scenes.every((s) => s.text && s.image));
 });
+
+test('decodeBytes: Shift_JIS(CP932) と UTF-8 を自動判定', async () => {
+  const { decodeBytes, base64ToBytes } = await import('../public/lib/encoding.js');
+  const sjis = new Uint8Array([129, 121, 148, 223, 149, 241, 129, 122, 131, 143, 131, 67, 129, 65, 145, 144, 32, 135, 64, 238, 224]);
+  assert.equal(decodeBytes(sjis), '【悲報】ワイ、草 ①髙');
+  assert.equal(decodeBytes(new TextEncoder().encode('﻿おんJ (12)')), 'おんJ (12)');
+  assert.equal(decodeBytes(base64ToBytes(Buffer.from('テスト').toString('base64'))), 'テスト');
+});

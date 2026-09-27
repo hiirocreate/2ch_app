@@ -1,5 +1,6 @@
 // 掲示板からの取得処理 (Node)。ホストは移転が多いので環境変数 BOARDS_JSON で差し替え可能。
 import { parseSubject, parseDat, parseReadCgi } from '../public/lib/parse.js';
+import { decodeBytes } from '../public/lib/encoding.js';
 import { DEFAULT_BOARDS, threadUrl, resolveThreadUrl as resolve } from '../public/lib/boards.js';
 
 export { DEFAULT_BOARDS, threadUrl };
@@ -14,11 +15,10 @@ export const resolveThreadUrl = (url) => resolve(url, BOARDS);
 const UA = process.env.USER_AGENT || 'Mozilla/5.0 (compatible; 2chMatomeViewer/0.1)';
 
 // テスト/デモ用に差し替え可能なフェッチャ
-let fetcher = async (url, encoding) => {
+let fetcher = async (url) => {
   const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) });
   if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
-  const buf = new Uint8Array(await res.arrayBuffer());
-  return new TextDecoder(encoding, { fatal: false }).decode(buf);
+  return decodeBytes(new Uint8Array(await res.arrayBuffer()));
 };
 export function setFetcher(fn) {
   fetcher = fn;

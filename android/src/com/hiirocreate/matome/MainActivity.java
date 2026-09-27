@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
+import android.util.Base64;
 import android.speech.tts.UtteranceProgressListener;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
@@ -112,21 +113,12 @@ public class MainActivity extends Activity {
         });
     }
 
-    private static Charset charset(String enc) {
-        // 5ch の Shift_JIS は実際には Windows-31J (機種依存文字を含む)
-        if (enc != null && enc.equalsIgnoreCase("shift_jis")) {
-            try { return Charset.forName("windows-31j"); } catch (Exception ignored) {}
-            return Charset.forName("Shift_JIS");
-        }
-        try { return Charset.forName(enc); } catch (Exception e) { return Charset.forName("UTF-8"); }
-    }
-
     class Bridge {
         @JavascriptInterface
-        public void request(final int id, final String method, final String url, final String headersJson, final String body, final String encoding) {
+        public void request(final int id, final String method, final String url, final String headersJson, final String body) {
             pool.execute(new Runnable() { @Override public void run() {
                 int status = 0;
-                String text;
+                byte[] data;
                 HttpURLConnection c = null;
                 try {
                     c = (HttpURLConnection) new URL(url).openConnection();
@@ -152,13 +144,14 @@ public class MainActivity extends Activity {
                         while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
                         in.close();
                     }
-                    text = new String(out.toByteArray(), charset(encoding));
+                    data = out.toByteArray();
                 } catch (Exception e) {
-                    text = e.toString();
+                    data = e.toString().getBytes(Charset.forName("UTF-8"));
                 } finally {
                     if (c != null) c.disconnect();
                 }
-                js("window.__bridgeCb(" + id + "," + status + "," + JSONObject.quote(text) + ")");
+                // 生バイトを渡し、文字コード判定は JS 側 (lib/encoding.js) で行う
+                js("window.__bridgeCb(" + id + "," + status + ",'" + Base64.encodeToString(data, Base64.NO_WRAP) + "')");
             }});
         }
 

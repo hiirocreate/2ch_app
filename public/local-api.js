@@ -1,5 +1,6 @@
 // Android アプリ用の端末内バックエンド。サーバー(server/)と同じ処理を WebView 内で行う。
 // 通信は Java 側の AndroidBridge 経由 (CORS 回避・Shift_JIS 変換)、保存は localStorage。
+import { decodeBytes, base64ToBytes } from './lib/encoding.js';
 import { DEFAULT_BOARDS, threadUrl, resolveThreadUrl } from './lib/boards.js';
 import { parseSubject, parseDat, parseReadCgi } from './lib/parse.js';
 import { momentum, kamiScore } from './lib/score.js';
@@ -13,24 +14,30 @@ const bridge = window.AndroidBridge;
 // ---- 通信 ----
 const pending = new Map();
 let seq = 0;
-window.__bridgeCb = (id, status, text) => {
+window.__bridgeCb = (id, status, b64) => {
   const p = pending.get(id);
   if (!p) return;
   pending.delete(id);
+  const text = decodeBytes(base64ToBytes(b64));
   status >= 200 && status < 300 ? p.resolve(text) : p.reject(Object.assign(new Error(status ? `HTTP ${status}` : text), { status, body: text }));
 };
-function request(url, { method = 'GET', headers = {}, body = '', encoding = 'utf-8' } = {}) {
+function request(url, { method = 'GET', headers = {}, body = '' } = {}) {
   return new Promise((resolve, reject) => {
     const id = ++seq;
     pending.set(id, { resolve, reject });
-    bridge.request(id, method, url, JSON.stringify(headers), body, encoding);
+    bridge.request(id, method, url, JSON.stringify(headers), body);
   });
 }
-let fetchText = (url, encoding) => request(url, { encoding });
+let fetchText = (url) => request(url);
 if (localStorage.getItem('demo') === '1') fetchText = (await import('./lib/demo.js')).demoFetcher;
 
 // ---- 保存 ----
+const DB_VERSION = '2'; // v1 は文字化けしたデータを保存している可能性があるため破棄
 function load() {
+  if (localStorage.getItem('dbv') !== DB_VERSION) {
+    localStorage.removeItem('db');
+    localStorage.setItem('dbv', DB_VERSION);
+  }
   try {
     return { ...emptyDb(), ...JSON.parse(localStorage.getItem('db') || '{}') };
   } catch {
