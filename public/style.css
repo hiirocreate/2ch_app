@@ -22,10 +22,10 @@ section{position:fixed;inset:0;background:var(--bg);z-index:5;overflow-y:auto}
 .bar{position:sticky;top:0;background:var(--bg);display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid #2c3039;z-index:1}
 .bar span{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #posts{padding:8px 12px}
-.post{border-bottom:1px solid #2a2e37;padding:8px 0}
-.post .h{font-size:12px;color:var(--sub)}.post .h b{color:var(--fg)}
+.post{border-bottom:1px solid #2a2e37;padding:8px 0;min-width:0;max-width:100%}
+.post .h{font-size:12px;color:var(--sub);overflow-wrap:anywhere;word-break:break-all}.post .h b{color:var(--fg)}
 .post.op .h b{color:var(--op)}
-.post .b{white-space:pre-wrap;word-break:break-all;margin-top:2px}
+.post .b{white-space:pre-wrap;word-break:break-all;overflow-wrap:anywhere;margin-top:2px}
 .anc{color:var(--op);cursor:pointer;text-decoration:underline}
 .pop{position:fixed;left:12px;right:12px;bottom:70px;background:#2a2e38;border-radius:10px;padding:10px;box-shadow:0 6px 24px #0008;z-index:9;max-height:40vh;overflow:auto}
 .stage{position:relative;max-width:1000px;margin:8px auto;padding:0 8px}
@@ -56,3 +56,8 @@ h1 button{margin-left:auto;margin-right:6px;padding:2px 8px}
 #viewer a{color:#ccc;font-size:13px}
 #diag{position:fixed;inset:0;background:var(--bg);z-index:30;display:flex;flex-direction:column;gap:8px;padding:12px}
 #diag textarea{flex:1;background:var(--card);color:var(--fg);border-radius:8px;padding:8px;font:12px/1.5 monospace}
+/* どんな本文 (長いAA・連続した空白・巨大画像・表) でも横にはみ出さない */
+html,body{max-width:100%;overflow-x:hidden}
+#thread,#posts{overflow-x:hidden}
+#posts img,#posts video,#posts table,#posts pre{max-width:100%}
+.ogp{grid-template-columns:auto minmax(0,1fr);min-width:0}.ogp>*{min-width:0;overflow-wrap:anywhere}
