@@ -302,15 +302,26 @@ function setupSettings() {
   const btn = document.createElement('button');
   btn.textContent = '⚙';
   btn.id = 'settings';
-  btn.onclick = () => {
-    const key = prompt('Claude APIキー（動画台本のAI生成用。空欄ならルールベース台本）', localStorage.getItem('apiKey') || '');
-    if (key === null) return;
-    key.trim() ? localStorage.setItem('apiKey', key.trim()) : localStorage.removeItem('apiKey');
-    const demo = confirm('デモデータで表示しますか？（OK=デモ / キャンセル=実際の掲示板）');
-    if ((localStorage.getItem('demo') === '1') !== demo) {
-      demo ? localStorage.setItem('demo', '1') : localStorage.removeItem('demo');
-      localStorage.removeItem('db');
-      location.reload();
+  btn.onclick = async () => {
+    const choice = prompt('設定メニュー（番号を入力）\n1: Claude APIキー\n2: デモデータ切替\n3: 通信診断（不具合報告用）', '3');
+    if (choice === '1') {
+      const key = prompt('Claude APIキー（動画台本のAI生成用。空欄ならルールベース台本）', localStorage.getItem('apiKey') || '');
+      if (key !== null) key.trim() ? localStorage.setItem('apiKey', key.trim()) : localStorage.removeItem('apiKey');
+    } else if (choice === '2') {
+      const demo = confirm('デモデータで表示しますか？（OK=デモ / キャンセル=実際の掲示板）');
+      if ((localStorage.getItem('demo') === '1') !== demo) {
+        demo ? localStorage.setItem('demo', '1') : localStorage.removeItem('demo');
+        localStorage.removeItem('db');
+        location.reload();
+      }
+    } else if (choice === '3') {
+      const v = document.createElement('div');
+      v.id = 'diag';
+      v.innerHTML = '<textarea readonly>診断中…（1分ほどかかります）</textarea><button>閉じる</button>';
+      v.querySelector('button').onclick = () => v.remove();
+      document.body.append(v);
+      const text = await backend.diagnose().catch((e) => `診断失敗: ${e.message}`);
+      v.querySelector('textarea').value = `${text}\n\n(${navigator.userAgent})`;
     }
   };
   $('h1').append(btn);

@@ -4,6 +4,8 @@ import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.speech.tts.TextToSpeech;
 import android.util.Base64;
 import android.speech.tts.UtteranceProgressListener;
@@ -15,6 +17,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -114,7 +117,85 @@ public class MainActivity extends Activity {
         });
     }
 
+    private final Handler ui = new Handler(Looper.getMainLooper());
+
+    private void deliver(int id, int status, String text) {
+        byte[] data = text.getBytes(Charset.forName("UTF-8"));
+        js("window.__bridgeCb(" + id + "," + status + ",'" + Base64.encodeToString(data, Base64.NO_WRAP) + "')");
+    }
+
+    /**
+     * 画面に出さない WebView でページを開き、JS 実行後の内容を返す。
+     * 通常の HTTP 取得がボット対策 (Cloudflare 等) やスマホ版転送で弾かれる場合の最終手段。
+     */
+    private void browse(final int id, final String url) {
+        final WebView w = new WebView(this);
+        w.getSettings().setJavaScriptEnabled(true);
+        w.getSettings().setDomStorageEnabled(true);
+        w.getSettings().setUserAgentString(UA);
+        w.getSettings().setBlockNetworkImage(true);
+        final boolean[] done = {false};
+        final Runnable[] grab = new Runnable[1];
+        final long started = System.currentTimeMillis();
+        final Runnable finish = new Runnable() {
+            @Override public void run() {
+                if (done[0]) return;
+                done[0] = true;
+                w.stopLoading();
+                w.destroy();
+            }
+        };
+        grab[0] = new Runnable() {
+            @Override public void run() {
+                if (done[0]) return;
+                w.evaluateJavascript(
+                    "(function(){var t=document.title||'';var plain=(document.contentType||'').indexOf('text/plain')===0;" +
+                    "return JSON.stringify([t, plain ? document.body.innerText : document.documentElement.outerHTML]);})()",
+                    new android.webkit.ValueCallback<String>() {
+                        @Override public void onReceiveValue(String v) {
+                            if (done[0]) return;
+                            try {
+                                JSONArray a = new JSONArray(new org.json.JSONTokener(v).nextValue().toString());
+                                String title = a.getString(0);
+                                boolean challenge = title.contains("Just a moment") || title.contains("しばらくお待ち") || title.contains("Attention Required");
+                                if (challenge && System.currentTimeMillis() - started < 20000) {
+                                    ui.postDelayed(grab[0], 1500); // チャレンジ通過待ち
+                                    return;
+                                }
+                                deliver(id, 200, a.getString(1));
+                            } catch (Exception e) {
+                                deliver(id, 0, "browse: " + e);
+                            }
+                            finish.run();
+                        }
+                    });
+            }
+        };
+        w.setWebViewClient(new WebViewClient() {
+            @Override public void onPageFinished(WebView view, String u) {
+                ui.removeCallbacks(grab[0]);
+                ui.postDelayed(grab[0], 800);
+            }
+        });
+        ui.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (done[0]) return;
+                deliver(id, 0, "browse: timeout");
+                finish.run();
+            }
+        }, 30000);
+        w.loadUrl(url);
+    }
+
     class Bridge {
+        @JavascriptInterface
+        public void browse(final int id, final String url) {
+            ui.post(new Runnable() {
+                @Override public void run() { MainActivity.this.browse(id, url); }
+            });
+        }
+
+
         @JavascriptInterface
         public void request(final int id, final String method, final String url, final String headersJson, final String body) {
             pool.execute(new Runnable() { @Override public void run() {

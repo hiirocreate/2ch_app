@@ -2,6 +2,7 @@ import { parseSubject } from './parse.js';
 
 // 板定義とURLユーティリティ (サーバー/アプリ共通)
 export const DEFAULT_BOARDS = [
+  { id: '5ch-livegalileo', site: '5ch', name: 'なんG', base: 'https://nova.5ch.io/livegalileo/', encoding: 'shift_jis' },
   { id: '5ch-livejupiter', site: '5ch', name: 'なんJ', base: 'https://eagle.5ch.io/livejupiter/', encoding: 'shift_jis' },
   { id: '5ch-news4vip', site: '5ch', name: 'ニュー速VIP', base: 'https://mi.5ch.io/news4vip/', encoding: 'shift_jis' },
   { id: '5ch-news', site: '5ch', name: 'ニュー速+', base: 'https://asahi.5ch.io/newsplus/', encoding: 'shift_jis' },

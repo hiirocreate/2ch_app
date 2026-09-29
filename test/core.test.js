@@ -127,3 +127,19 @@ test('fetchThreadData: サイト別の取得順とフォールバック', async 
   assert.equal((await fetchThreadData(five, '1790000000', mk({ 'read.cgi': '<title>エラー</title>', '.dat': dat }))).posts.length, 1);
   await assert.rejects(fetchThreadData(five, '1790000000', mk({ 'read.cgi': '<title>エラー</title>' })), /エラー/);
 });
+
+test('parseReadCgi: おーぷん2ch (<dl><dt><dd> レイアウト)', async () => {
+  const fs = await import('node:fs');
+  const t = parseReadCgi(fs.readFileSync(new URL('./fixtures/open2ch-readcgi.html', import.meta.url), 'utf8'));
+  assert.equal(t.posts.length, 3);
+  assert.deepEqual([t.posts[1].no, t.posts[1].name, t.posts[1].id, t.posts[1].body], [2, '名無し', 'B929', '資格、留学とか色々聞きたい']);
+  assert.equal(t.posts[1].date, '26/09/27(日) 21:55:33');
+});
+
+test('fetchThreadData: 通常取得が全滅したらブラウザ経由で取得', async () => {
+  const { fetchThreadData } = await import('../public/lib/thread.js');
+  const fail = async () => { throw new Error('HTTP 403'); };
+  const html = '<dl><dt res="1">1：<b>名無し</b>：26/09/27(日) 21:55:33 ID:abcd</dt><dd> 本文 </dd></dl>';
+  const t = await fetchThreadData({ site: 'open2ch', base: 'https://h.open2ch.net/x/' }, '1790000000', fail, async (u) => (u.includes('read.cgi') ? html : ''));
+  assert.equal(t.posts[0].body, '本文');
+});

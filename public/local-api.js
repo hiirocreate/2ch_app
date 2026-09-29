@@ -21,7 +21,7 @@ window.__bridgeCb = (id, status, b64) => {
   if (!p) return;
   pending.delete(id);
   const text = decodeBytes(base64ToBytes(b64));
-  status >= 200 && status < 300 ? p.resolve(text) : p.reject(Object.assign(new Error(status ? `HTTP ${status}` : text), { status, body: text }));
+  status >= 200 && status < 300 ? p.resolve(text) : p.reject(Object.assign(new Error(status ? `HTTP ${status}` : text || "応答なし"), { status, body: text }));
 };
 function request(url, { method = 'GET', headers = {}, body = '' } = {}) {
   return new Promise((resolve, reject) => {
@@ -67,7 +67,14 @@ const boardById = (id) => DEFAULT_BOARDS.find((b) => b.id === id) || db.boards[i
 // ---- 取得 ----
 const cache = new Map();
 localStorage.removeItem('noDat'); // 旧版の「dat 不可」記憶は誤判定の原因になるので破棄
-const fetchThread = (board, key) => fetchThreadData(board, key, fetchText);
+// 通常の取得が全滅した時の最終手段: 画面外の WebView でページを開いて内容を取る
+const browseText = (url) =>
+  new Promise((resolve, reject) => {
+    const id = ++seq;
+    pending.set(id, { resolve, reject });
+    bridge.browse(id, url);
+  });
+const fetchThread = (board, key) => fetchThreadData(board, key, fetchText, localStorage.getItem('demo') === '1' ? undefined : browseText);
 
 async function getThread(board, key, force = false) {
   const id = tid(board.id, key);
@@ -98,7 +105,13 @@ const hosts = JSON.parse(localStorage.getItem('hosts') || '{}');
 for (const b of DEFAULT_BOARDS) if (hosts[b.id]) b.base = hosts[b.id];
 async function fetchSubject(board) {
   const before = board.base;
-  const list = await fetchSubjectList(board, fetchText);
+  let list;
+  try {
+    list = await fetchSubjectList(board, fetchText);
+  } catch (e) {
+    if (localStorage.getItem('demo') === '1') throw e;
+    list = await fetchSubjectList(board, browseText); // ボット対策で弾かれた場合はブラウザ経由
+  }
   if (board.base !== before) {
     hosts[board.id] = board.base;
     localStorage.setItem('hosts', JSON.stringify(hosts));
@@ -185,6 +198,28 @@ export const localApi = {
     return listThreads(db, params, { threshold: KAMI_THRESHOLD, boardName: (id) => boardById(id)?.name || id });
   },
   refresh,
+  // 通信診断: 各板の一覧取得と先頭スレの取得を試し、結果を文字列で返す
+  async diagnose() {
+    const lines = [];
+    for (const board of DEFAULT_BOARDS) {
+      try {
+        const list = await fetchSubject(board);
+        lines.push(`■${board.name} ${board.base} 一覧:${list.length}件`);
+        const t = list.find((x) => x.resCount >= 5) || list[0];
+        if (t) {
+          try {
+            const d = await fetchThread(board, t.key);
+            lines.push(`  スレ ${t.key}: ${d.posts.length}レス OK`);
+          } catch (e) {
+            lines.push(`  スレ ${t.key}: ${e.message}`);
+          }
+        }
+      } catch (e) {
+        lines.push(`■${board.name} 一覧失敗: ${e.message.slice(0, 150)}`);
+      }
+    }
+    return lines.join('\n');
+  },
   async ogp(url) {
     if (!ogpCache.has(url)) {
       const p = request(url, { headers: { 'User-Agent': PREVIEW_UA, 'Accept-Language': 'ja' } }).then((html) => parseOgp(html, url));

@@ -68,6 +68,7 @@ export function parseReadCgi(html) {
     .filter((m) => /\bclass="[^"]*\bpost\b[^"]*"/i.test(m[0]))
     .map((m) => Object.assign(m, { 1: m[0].match(/\bid="(\d+)"/)?.[1] }))
     .filter((m) => m[1]);
+  if (!starts.length) return parseDlThread(html, title);
   starts.forEach((m, i) => {
     const end = starts[i + 1]?.index ?? Math.min(html.length, m.index + 30000);
     const block = html.slice(m.index + m[0].length, end);
@@ -85,6 +86,26 @@ export function parseReadCgi(html) {
       body: cleanBody(htmlToText(pick('(?:post-content|message|escaped)'))),
     });
   });
+  return { title, posts };
+}
+
+// おーぷん2ch / 旧2ch 形式: <dt res="N">番号：名前：日付 ID:xx</dt><dd>本文</dd>
+function parseDlThread(html, title) {
+  const posts = [];
+  for (const m of html.matchAll(/<dt\b([^>]*)>([\s\S]*?)<\/?dd\b[^>]*>([\s\S]*?)(?=<\/dd>|<dt\b|<\/dl>)/gi)) {
+    const [, attrs, head, body] = m;
+    const no = Number(attrs.match(/\bres="(\d+)"/)?.[1] || htmlToText(head).match(/^(\d+)/)?.[1]);
+    if (!no) continue;
+    const headText = htmlToText(head).replace(/\s+/g, ' ');
+    posts.push({
+      no,
+      name: htmlToText(head.match(/class="name"[^>]*>([\s\S]*?)<\/font>/i)?.[1] || head.match(/<b>([\s\S]*?)<\/b>/i)?.[1] || ''),
+      mail: '',
+      date: headText.match(/(\d{2,4}\/\d{2}\/\d{2}\S*\s+[\d:.]+)/)?.[1] || '',
+      id: headText.match(/ID:\s*([^\s<]+?)(?:主)?(?:\s|$)/)?.[1] || '',
+      body: cleanBody(htmlToText(body)),
+    });
+  }
   return { title, posts };
 }
 
